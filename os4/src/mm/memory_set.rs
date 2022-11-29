@@ -350,3 +350,26 @@ pub fn remap_test() {
         .executable());
     info!("remap_test passed!");
 }
+
+fn mmap_check(_start: usize, _len: usize, _port: usize)->bool{
+    if (_port&!0x7) != 0 || (_port&0x7==0){
+        return false;
+    }
+    if (_start&(4096-1)) != 0{
+        return false;
+    }
+    true
+}
+
+pub fn mmap(_start: usize, _len: usize, _port: usize)->isize{
+    match mmap_check(_start,_len,_port) {
+        true=>{
+            0
+        },
+        false=>-1,
+    }
+}
+
+pub fn munmap(_start: usize, _len: usize) -> isize {
+    0
+}
