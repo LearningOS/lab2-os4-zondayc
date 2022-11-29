@@ -135,7 +135,7 @@ impl PageTable {
 
 /// translate a pointer to a mutable u8 Vec through page table
 pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&'static mut [u8]> {
-    let page_table = PageTable::from_token(token);
+    let page_table = PageTable::from_token(token);//token是某个地址空间的token
     let mut start = ptr as usize;
     let end = start + len;
     let mut v = Vec::new();

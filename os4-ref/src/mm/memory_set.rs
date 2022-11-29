@@ -32,9 +32,9 @@ lazy_static! {
 }
 
 /// memory set structure, controls virtual-memory space
-pub struct MemorySet {
-    page_table: PageTable,
-    areas: Vec<MapArea>,
+pub struct MemorySet {//用来描述地址空间
+    page_table: PageTable,//该地址空间的多级页表
+    areas: Vec<MapArea>,//挂着对应逻辑段中的数据所在的物理页帧
 }
 
 impl MemorySet {
@@ -48,7 +48,7 @@ impl MemorySet {
         self.page_table.token()
     }
     /// Assume that no conflicts.
-    pub fn insert_framed_area(
+    pub fn insert_framed_area(//在当前地址空间插入一个Framed方式映射到物理内存的逻辑段
         &mut self,
         start_va: VirtAddr,
         end_va: VirtAddr,
@@ -59,7 +59,7 @@ impl MemorySet {
             None,
         );
     }
-    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
+    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {//插入逻辑段
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);
@@ -75,7 +75,7 @@ impl MemorySet {
         );
     }
     /// Without kernel stacks.
-    pub fn new_kernel() -> Self {
+    pub fn new_kernel() -> Self {//生成内核的地址空间
         let mut memory_set = Self::new_bare();
         // map trampoline
         memory_set.map_trampoline();
@@ -141,12 +141,12 @@ impl MemorySet {
     }
     /// Include sections in elf and trampoline and TrapContext and user stack,
     /// also returns user_sp and entry point.
-    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {
+    pub fn from_elf(elf_data: &[u8]) -> (Self, usize, usize) {//生成应用的地址空间
         let mut memory_set = Self::new_bare();
         // map trampoline
         memory_set.map_trampoline();
         // map program headers of elf, with U flag
-        let elf = xmas_elf::ElfFile::new(elf_data).unwrap();
+        let elf = xmas_elf::ElfFile::new(elf_data).unwrap();//解析elf
         let elf_header = elf.header;
         let magic = elf_header.pt1.magic;
         assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf!");
@@ -154,7 +154,7 @@ impl MemorySet {
         let mut max_end_vpn = VirtPageNum(0);
         for i in 0..ph_count {
             let ph = elf.program_header(i).unwrap();
-            if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
+            if ph.get_type().unwrap() == xmas_elf::program::Type::Load {//确认需要被装载
                 let start_va: VirtAddr = (ph.virtual_addr() as usize).into();
                 let end_va: VirtAddr = ((ph.virtual_addr() + ph.mem_size()) as usize).into();
                 let mut map_perm = MapPermission::U;
@@ -176,6 +176,7 @@ impl MemorySet {
                 );
             }
         }
+        //开始处理用户栈
         // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
         let mut user_stack_bottom: usize = max_end_va.into();
@@ -210,8 +211,8 @@ impl MemorySet {
     pub fn activate(&self) {
         let satp = self.page_table.token();
         unsafe {
-            satp::write(satp);
-            core::arch::asm!("sfence.vma");
+            satp::write(satp);//写入相应satp CSR，
+            core::arch::asm!("sfence.vma");//立即使用 sfence.vma 指令将TLB清空
         }
     }
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
@@ -220,17 +221,19 @@ impl MemorySet {
 }
 
 /// map area structure, controls a contiguous piece of virtual memory
-pub struct MapArea {
-    vpn_range: VPNRange,
-    data_frames: BTreeMap<VirtPageNum, FrameTracker>,
+pub struct MapArea {//描述一段连续地址的虚拟内存
+    vpn_range: VPNRange,//描述一段虚拟页号的连续区间
+    data_frames: BTreeMap<VirtPageNum, FrameTracker>,//用于Framed的方式，
+    //保存了该逻辑段内的每个虚拟页面和它被映射到的物理页帧FrameTracker的一个键值对容器，
+    //这些物理页帧用来存放实际数据而不是多级页表的中间节点
     map_type: MapType,
-    map_perm: MapPermission,
+    map_perm: MapPermission,//控制访问方式
 }
 
 impl MapArea {
     pub fn new(
         start_va: VirtAddr,
-        end_va: VirtAddr,
+        end_va: VirtAddr,//这两个地址需要分别向上/下取整
         map_type: MapType,
         map_perm: MapPermission,
     ) -> Self {
@@ -244,13 +247,14 @@ impl MapArea {
         }
     }
     pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+        //对逻辑段中的单个虚拟页面进行映射/解映射的方法
         let ppn: PhysPageNum;
         match self.map_type {
             MapType::Identical => {
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
-                let frame = frame_alloc().unwrap();
+                let frame = frame_alloc().unwrap();//这里要分配一个物理页帧
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, frame);
             }
@@ -270,6 +274,7 @@ impl MapArea {
         page_table.unmap(vpn);
     }
     pub fn map(&mut self, page_table: &mut PageTable) {
+        //将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中加入或删除
         for vpn in self.vpn_range {
             self.map_one(page_table, vpn);
         }
@@ -283,6 +288,7 @@ impl MapArea {
     /// data: start-aligned but maybe with shorter length
     /// assume that all frames were cleared before
     pub fn copy_data(&mut self, page_table: &mut PageTable, data: &[u8]) {
+        //将切片data中的数据拷贝到当前逻辑段实际被内核放置在的各物理页帧上
         assert_eq!(self.map_type, MapType::Framed);
         let mut start: usize = 0;
         let mut current_vpn = self.vpn_range.get_start();
@@ -307,8 +313,8 @@ impl MapArea {
 #[derive(Copy, Clone, PartialEq, Debug)]
 /// map type for memory set: identical or framed
 pub enum MapType {
-    Identical,
-    Framed,
+    Identical,//表示恒等映射
+    Framed,//表示对于每个虚拟页面都需要映射到一个新分配的物理页帧
 }
 
 bitflags! {

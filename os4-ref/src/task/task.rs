@@ -8,9 +8,9 @@ use crate::trap::{trap_handler, TrapContext};
 pub struct TaskControlBlock {
     pub task_status: TaskStatus,
     pub task_cx: TaskContext,
-    pub memory_set: MemorySet,
-    pub trap_cx_ppn: PhysPageNum,
-    pub base_size: usize,
+    pub memory_set: MemorySet,//应用的地址空间
+    pub trap_cx_ppn: PhysPageNum,//位于应用地址空间次高页的Trap上下文被实际存放在物理页帧的物理页号
+    pub base_size: usize,//应用数据的大小
 }
 
 impl TaskControlBlock {
@@ -22,19 +22,19 @@ impl TaskControlBlock {
     }
     pub fn new(elf_data: &[u8], app_id: usize) -> Self {
         // memory_set with elf program headers/trampoline/trap context/user stack
-        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);//解析elf相关信息得到的地址空间信息
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
         let task_status = TaskStatus::Ready;
         // map a kernel-stack in kernel space
-        let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(app_id);
+        let (kernel_stack_bottom, kernel_stack_top) = kernel_stack_position(app_id);//找到对应的内黑奴关键地址
         KERNEL_SPACE.lock().insert_framed_area(
             kernel_stack_bottom.into(),
             kernel_stack_top.into(),
             MapPermission::R | MapPermission::W,
-        );
+        );//将应用的内核栈放到对应的地址空间中
         let task_control_block = Self {
             task_status,
             task_cx: TaskContext::goto_trap_return(kernel_stack_top),
