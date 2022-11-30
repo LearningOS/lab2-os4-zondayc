@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 use lazy_static::*;
 use riscv::register::satp;
 use spin::Mutex;
+use xmas_elf::program;
 
 extern "C" {
     fn stext();
@@ -218,6 +219,47 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+    
+    pub fn mmap_check_port_start(&self,_start: usize, _len: usize, _port: usize)->bool{
+        if (_port&!0x7) != 0 || (_port&0x7==0){
+            return false;
+        }
+        if (_start&(4096-1)) != 0{
+            return false;
+        }
+        true
+    }
+
+    pub fn resolve_port(&self,port:usize)->MapPermission{
+        match port {
+            1=>MapPermission::R,
+            2=>MapPermission::W,
+            3=>MapPermission::W|MapPermission::R,
+            4=>MapPermission::X,
+            5=>MapPermission::X|MapPermission::R,
+            6=>MapPermission::W|MapPermission::X,
+            7=>MapPermission::W|MapPermission::R|MapPermission::X,
+            _=>MapPermission { bits: 0 },
+        }
+    }
+
+    pub fn mmap(&mut self,_start: usize, _len: usize, _port: usize)->isize{//?这里相当于直接插入了一个新的逻辑段
+        match self.mmap_check_port_start(_start,_len,_port) {
+            true=>{
+                let permission=self.resolve_port(_port);
+                let start_va=VirtAddr(_start);
+                let end_va=VirtAddr(_start+_len);
+                self.insert_framed_area(start_va, end_va, permission);
+                0
+            },
+            false=>-1,
+        }
+    }
+
+    pub fn munmap(&mut self,_start: usize, _len: usize) -> isize {
+        0
+    }
+
 }
 
 /// map area structure, controls a contiguous piece of virtual memory
@@ -351,25 +393,3 @@ pub fn remap_test() {
     info!("remap_test passed!");
 }
 
-fn mmap_check(_start: usize, _len: usize, _port: usize)->bool{
-    if (_port&!0x7) != 0 || (_port&0x7==0){
-        return false;
-    }
-    if (_start&(4096-1)) != 0{
-        return false;
-    }
-    true
-}
-
-pub fn mmap(_start: usize, _len: usize, _port: usize)->isize{
-    match mmap_check(_start,_len,_port) {
-        true=>{
-            0
-        },
-        false=>-1,
-    }
-}
-
-pub fn munmap(_start: usize, _len: usize) -> isize {
-    0
-}

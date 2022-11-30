@@ -162,7 +162,9 @@ impl TaskManager {
     fn get_current_process_info(&self)->CurTaskInfo{
         let inner=self.inner.exclusive_access();
         let current=inner.current_task;
-        inner.tasks[current].task_info.clone()
+        let ret=inner.tasks[current].task_info.clone();
+        drop(inner);
+        ret
     }
 
     fn update_info(&self, syscall_id:usize){
@@ -176,6 +178,23 @@ impl TaskManager {
             SYSCALL_YIELD=>inner.tasks[current].task_info.sys_yield+=1,
             _=>(),
         }
+        drop(inner);
+    }
+
+    pub fn get_tcb_mmap(&self,_start: usize, _len: usize, _port: usize)->isize{//?这里相当于直接插入了一个新的逻辑段
+        let mut inner=self.inner.exclusive_access();
+        let current=inner.current_task;
+        let ret=inner.tasks[current].tcb_mmap(_start, _len, _port);
+        drop(inner);
+        ret
+    }
+    
+    pub fn get_tcb_munmap(&self,_start: usize, _len: usize) -> isize {
+        let mut inner=self.inner.exclusive_access();
+        let current=inner.current_task;
+        let ret=inner.tasks[current].tcb_munmap(_start, _len);
+        drop(inner);
+        ret
     }
 }
 
@@ -228,4 +247,12 @@ pub fn get_current_tcb_info()->CurTaskInfo{
 
 pub fn update_task_info(syscall_id:usize){
     TASK_MANAGER.update_info(syscall_id);
+}
+
+pub fn TaskManager_mmap(_start: usize, _len: usize, _port: usize)->isize{//?这里相当于直接插入了一个新的逻辑段
+    TASK_MANAGER.get_tcb_mmap(_start,_len,_port)
+}
+
+pub fn TaskManager_munmap(_start: usize, _len: usize) -> isize {
+    TASK_MANAGER.get_tcb_munmap(_start,_len)
 }

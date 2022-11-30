@@ -66,6 +66,16 @@ impl TaskControlBlock {
         );
         task_control_block
     }
+
+    pub fn tcb_mmap(&mut self,_start: usize, _len: usize, _port: usize)->isize{
+        let memset=&mut self.memory_set;
+        memset.mmap(_start, _len, _port)
+    }
+    
+    pub fn tcb_munmap(&mut self,_start: usize, _len: usize) -> isize {
+        let memset=&mut self.memory_set;
+        memset.munmap(_start, _len)
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
