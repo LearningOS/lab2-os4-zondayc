@@ -11,7 +11,6 @@ use alloc::vec::Vec;
 use lazy_static::*;
 use riscv::register::satp;
 use spin::Mutex;
-use xmas_elf::program;
 
 extern "C" {
     fn stext();
@@ -243,13 +242,53 @@ impl MemorySet {
         }
     }
 
+    pub fn is_mapped_before(&self,start_va:VirtAddr,end_va:VirtAddr)->bool{
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
+        let vRange=VPNRange::new(start_vpn, end_vpn);
+        let mut counter=1;
+        for vpn in vRange{
+            println!("vpn is {:?} and counter is {}",vpn,counter);
+            counter+=1;
+            match self.page_table.find_pte(vpn){
+                Some(_)=> {
+                    println!("{:?} is mapped before",vpn);
+                    return true;
+                },
+                None=>{},
+            }
+        }
+        false
+    }
+    
+    pub fn is_not_mapped_before(&self,start_va:VirtAddr,end_va:VirtAddr)->bool{
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
+        let vRange=VPNRange::new(start_vpn, end_vpn);
+        for vpn in vRange{
+            match self.page_table.find_pte(vpn){
+                Some(_)=> {},
+                None=>{
+                    println!("{:?} is not mapped before",vpn);
+                    return true;
+                },
+            }
+        }
+        false
+    }
+
     pub fn mmap(&mut self,_start: usize, _len: usize, _port: usize)->isize{//?这里相当于直接插入了一个新的逻辑段
         match self.mmap_check_port_start(_start,_len,_port) {
             true=>{
                 let permission=self.resolve_port(_port);
                 let start_va=VirtAddr(_start);
                 let end_va=VirtAddr(_start+_len);
+                if self.is_mapped_before(start_va,end_va){
+                    return -1;
+                }
+                println!("map {:?} to {:?}",start_va,end_va);
                 self.insert_framed_area(start_va, end_va, permission);
+                println!("end map {:?} to {:?}",start_va,end_va);
                 0
             },
             false=>-1,
@@ -257,6 +296,20 @@ impl MemorySet {
     }
 
     pub fn munmap(&mut self,_start: usize, _len: usize) -> isize {
+        let start_va=VirtAddr(_start);
+        let end_va=VirtAddr(_start+_len);
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
+        println!("unmap {:?} to {:?}",start_va,end_va);
+        let vRange=VPNRange::new(start_vpn, end_vpn);
+        for vpn in vRange{
+            match self.page_table.find_pte(vpn){
+                Some(_)=> self.page_table.unmap(vpn),
+                None=>{
+                    return -1;
+                },
+            }
+        }
         0
     }
 

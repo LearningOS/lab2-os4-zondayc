@@ -12,6 +12,7 @@ use user_lib::mmap;
 
 #[no_mangle]
 fn main() -> i32 {
+    //println!("Should cause error, Test 04_2 begin!");
     let start: usize = 0x10000000;
     let len: usize = 4096;
     let prot: usize = 1;
