@@ -81,6 +81,7 @@ impl PageTable {
         let mut idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
+        //println!("find pte create {:?}",vpn);
         for (i, idx) in idxs.iter_mut().enumerate() {
             let pte = &mut ppn.get_pte_array()[*idx];
             if i == 2 {
@@ -97,6 +98,7 @@ impl PageTable {
         result
     }
     pub fn find_pte(&self, vpn: VirtPageNum) -> Option<&PageTableEntry> {
+        //println!("vpn is {:?}",vpn);
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&PageTableEntry> = None;
@@ -113,7 +115,7 @@ impl PageTable {
         }
         result
     }
-    #[allow(unused)]
+    #[allow(unused)] 
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);

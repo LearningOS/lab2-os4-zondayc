@@ -1,5 +1,7 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
+use core::prelude;
+
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -246,32 +248,12 @@ impl MemorySet {
         let start_vpn: VirtPageNum = start_va.floor();
         let end_vpn: VirtPageNum = end_va.ceil();
         let vRange=VPNRange::new(start_vpn, end_vpn);
-        let mut counter=1;
         for vpn in vRange{
-            println!("vpn is {:?} and counter is {}",vpn,counter);
-            counter+=1;
-            match self.page_table.find_pte(vpn){
-                Some(_)=> {
-                    println!("{:?} is mapped before",vpn);
+            for mem_area in self.areas.iter(){
+                if mem_area.data_frames.contains_key(&vpn){
+                    //println!("{:?} is mapped before",vpn);
                     return true;
-                },
-                None=>{},
-            }
-        }
-        false
-    }
-    
-    pub fn is_not_mapped_before(&self,start_va:VirtAddr,end_va:VirtAddr)->bool{
-        let start_vpn: VirtPageNum = start_va.floor();
-        let end_vpn: VirtPageNum = end_va.ceil();
-        let vRange=VPNRange::new(start_vpn, end_vpn);
-        for vpn in vRange{
-            match self.page_table.find_pte(vpn){
-                Some(_)=> {},
-                None=>{
-                    println!("{:?} is not mapped before",vpn);
-                    return true;
-                },
+                }
             }
         }
         false
@@ -286,9 +268,10 @@ impl MemorySet {
                 if self.is_mapped_before(start_va,end_va){
                     return -1;
                 }
-                println!("map {:?} to {:?}",start_va,end_va);
+                //println!("map {:?} to {:?}",start_va,end_va);
                 self.insert_framed_area(start_va, end_va, permission);
-                println!("end map {:?} to {:?}",start_va,end_va);
+                println!("perm is {:?}",permission);
+                //println!("end map {:?} to {:?}",start_va,end_va);
                 0
             },
             false=>-1,
@@ -298,19 +281,27 @@ impl MemorySet {
     pub fn munmap(&mut self,_start: usize, _len: usize) -> isize {
         let start_va=VirtAddr(_start);
         let end_va=VirtAddr(_start+_len);
-        let start_vpn: VirtPageNum = start_va.floor();
-        let end_vpn: VirtPageNum = end_va.ceil();
-        println!("unmap {:?} to {:?}",start_va,end_va);
-        let vRange=VPNRange::new(start_vpn, end_vpn);
-        for vpn in vRange{
-            match self.page_table.find_pte(vpn){
-                Some(_)=> self.page_table.unmap(vpn),
-                None=>{
+        //if self.is_all_mapped(start_va, end_va){
+            let start_vpn: VirtPageNum = start_va.floor();
+            let end_vpn: VirtPageNum = end_va.ceil();
+            //println!("unmap {:?} to {:?}",start_va,end_va);
+            let vRange=VPNRange::new(start_vpn, end_vpn);
+            let mut flag:bool=false;
+            for vpn in vRange{
+                for area in self.areas.iter_mut(){
+                    if area.data_frames.contains_key(&vpn){
+                        area.unmap_one(&mut self.page_table, vpn);
+                        flag=true;
+                        break;
+                    }
+                }
+                if flag==false{
                     return -1;
-                },
+                }
+                flag=false;
             }
-        }
-        0
+            return 0;
+        //}
     }
 
 }
@@ -351,6 +342,7 @@ impl MapArea {
             MapType::Framed => {
                 let frame = frame_alloc().unwrap();//这里要分配一个物理页帧
                 ppn = frame.ppn;
+                //println!("data frames insert <{:?},{:?}>",vpn,frame);
                 self.data_frames.insert(vpn, frame);
             }
         }
@@ -371,6 +363,7 @@ impl MapArea {
     pub fn map(&mut self, page_table: &mut PageTable) {
         //将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中加入或删除
         for vpn in self.vpn_range {
+            //println!("map {:?} to page_table",vpn);
             self.map_one(page_table, vpn);
         }
     }
