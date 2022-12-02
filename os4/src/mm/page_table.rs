@@ -1,6 +1,7 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
 use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum,PhysAddr};
+use _core::prelude;
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -81,14 +82,16 @@ impl PageTable {
         let mut idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
-        //println!("find pte create {:?}",vpn);
+        println!("find pte create {:?}",vpn);
         for (i, idx) in idxs.iter_mut().enumerate() {
             let pte = &mut ppn.get_pte_array()[*idx];
             if i == 2 {
+                println!("return some pte");
                 result = Some(pte);
                 break;
             }
             if !pte.is_valid() {
+                println!("pte is not valid");
                 let frame = frame_alloc().unwrap();
                 *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
                 self.frames.push(frame);
