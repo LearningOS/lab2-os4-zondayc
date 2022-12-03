@@ -233,13 +233,13 @@ impl MemorySet {
 
     pub fn resolve_port(&self,port:usize)->MapPermission{
         match port {
-            1=>MapPermission::R,
-            2=>MapPermission::W,
-            3=>MapPermission::W|MapPermission::R,
-            4=>MapPermission::X,
-            5=>MapPermission::X|MapPermission::R,
-            6=>MapPermission::W|MapPermission::X,
-            7=>MapPermission::W|MapPermission::R|MapPermission::X,
+            1=>MapPermission::R|MapPermission::U,
+            2=>MapPermission::W|MapPermission::U,
+            3=>MapPermission::W|MapPermission::R|MapPermission::U,
+            4=>MapPermission::X|MapPermission::U,
+            5=>MapPermission::X|MapPermission::R|MapPermission::U,
+            6=>MapPermission::W|MapPermission::X|MapPermission::U,
+            7=>MapPermission::W|MapPermission::R|MapPermission::X|MapPermission::U,
             _=>MapPermission { bits: 0 },
         }
     }
@@ -259,7 +259,7 @@ impl MemorySet {
         false
     }
 
-    pub fn mmap(&mut self,_start: usize, _len: usize, _port: usize)->isize{//?这里相当于直接插入了一个新的逻辑段
+    pub fn mmap(&mut self,_start: usize, _len: usize, _port: usize)->isize{//这里相当于直接插入了一个新的逻辑段
         match self.mmap_check_port_start(_start,_len,_port) {
             true=>{
                 let permission=self.resolve_port(_port);
@@ -270,7 +270,16 @@ impl MemorySet {
                 }
                 //println!("map {:?} to {:?}",start_va,end_va);
                 self.insert_framed_area(start_va, end_va, permission);
-                println!("perm is {:?}",permission);
+                // self.push(
+                //     MapArea::new(
+                //         _start.into(),
+                //         (_start+_len).into(),
+                //         MapType::Framed,
+                //         permission,
+                //     ),
+                //     None,
+                // );
+                //println!("perm is {:?}",permission);
                 //println!("end map {:?} to {:?}",start_va,end_va);
                 0
             },
