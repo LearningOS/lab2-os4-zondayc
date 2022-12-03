@@ -12,6 +12,7 @@ use user_lib::{mmap, munmap};
 
 #[no_mangle]
 fn main() -> i32 {
+    //println!("Test 04_6 ummap2 begin!");
     let start: usize = 0x10000000;
     let len: usize = 4096;
     let prot: usize = 3;

@@ -12,6 +12,7 @@ use user_lib::mmap;
 
 #[no_mangle]
 fn main() -> i32 {
+    //println!("Should cause error, Test 04_22 fail!");
     let start: usize = 0x10000000;
     let len: usize = 4096;
     let prot: usize = 2;
@@ -21,6 +22,6 @@ fn main() -> i32 {
         // *addr = start as u8; // can't write, R == 0 && W == 1 is illegal in riscv
         assert!(*addr != 0);
     }
-    println!("Should cause error, Test 04_2 fail!");
+    println!("Should cause error, Test 04_22 fail!");
     0
 }

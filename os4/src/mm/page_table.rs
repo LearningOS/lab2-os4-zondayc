@@ -1,6 +1,7 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum,PhysAddr};
+use _core::prelude;
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -81,13 +82,16 @@ impl PageTable {
         let mut idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&mut PageTableEntry> = None;
+        //println!("find pte create {:?}",vpn);
         for (i, idx) in idxs.iter_mut().enumerate() {
             let pte = &mut ppn.get_pte_array()[*idx];
             if i == 2 {
+                //println!("return some pte");
                 result = Some(pte);
                 break;
             }
             if !pte.is_valid() {
+                //println!("pte is not valid");
                 let frame = frame_alloc().unwrap();
                 *pte = PageTableEntry::new(frame.ppn, PTEFlags::V);
                 self.frames.push(frame);
@@ -96,7 +100,8 @@ impl PageTable {
         }
         result
     }
-    fn find_pte(&self, vpn: VirtPageNum) -> Option<&PageTableEntry> {
+    pub fn find_pte(&self, vpn: VirtPageNum) -> Option<&PageTableEntry> {
+        //println!("vpn is {:?}",vpn);
         let idxs = vpn.indexes();
         let mut ppn = self.root_ppn;
         let mut result: Option<&PageTableEntry> = None;
@@ -113,7 +118,7 @@ impl PageTable {
         }
         result
     }
-    #[allow(unused)]
+    #[allow(unused)] 
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
         let pte = self.find_pte_create(vpn).unwrap();
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
@@ -154,4 +159,13 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+pub fn translated_pointer(token: usize, ptr: *const u8) -> usize{
+    let page_table=PageTable::from_token(token);
+    let ptr_va=VirtAddr::from(ptr as usize);
+    let vpn=ptr_va.floor();
+    let ppn=page_table.translate(vpn).unwrap().ppn();
+    let pa: PhysAddr = ppn.into();
+    (pa.0+ptr_va.page_offset()) as usize
 }

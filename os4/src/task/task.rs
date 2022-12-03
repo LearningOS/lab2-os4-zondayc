@@ -5,12 +5,24 @@ use crate::mm::{MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::trap::{trap_handler, TrapContext};
 
 /// task control block structure
+#[derive(Clone, Copy)]
+pub struct CurTaskInfo{
+    pub sys_write:  u32,
+    pub sys_exit:   u32,
+    pub sys_info:   u32,
+    pub sys_time:   u32,
+    pub sys_yield:  u32,
+    pub begin_time: usize,
+    pub task_status:TaskStatus,
+}
+
 pub struct TaskControlBlock {
     pub task_status: TaskStatus,
     pub task_cx: TaskContext,
     pub memory_set: MemorySet,//应用的地址空间
     pub trap_cx_ppn: PhysPageNum,//位于应用地址空间次高页的Trap上下文被实际存放在物理页帧的物理页号
     pub base_size: usize,//应用数据的大小
+    pub task_info: CurTaskInfo,
 }
 
 impl TaskControlBlock {
@@ -41,6 +53,7 @@ impl TaskControlBlock {
             memory_set,
             trap_cx_ppn,
             base_size: user_sp,
+            task_info: CurTaskInfo::zero_init(),
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.get_trap_cx();
@@ -53,13 +66,29 @@ impl TaskControlBlock {
         );
         task_control_block
     }
+
+    pub fn tcb_mmap(&mut self,_start: usize, _len: usize, _port: usize)->isize{
+        let memset=&mut self.memory_set;
+        memset.mmap(_start, _len, _port)
+    }
+    
+    pub fn tcb_munmap(&mut self,_start: usize, _len: usize) -> isize {
+        let memset=&mut self.memory_set;
+        memset.munmap(_start, _len)
+    }
 }
 
 #[derive(Copy, Clone, PartialEq)]
 /// task status: UnInit, Ready, Running, Exited
 pub enum TaskStatus {
-    UnInit,
+    UnInit, 
     Ready,
     Running,
     Exited,
+}
+
+impl CurTaskInfo{
+    pub fn zero_init() -> Self{
+        CurTaskInfo { sys_write: 0, sys_exit: 0, sys_info: 0, sys_time: 0, sys_yield: 0, begin_time: 0, task_status:TaskStatus:: Ready }
+    }
 }

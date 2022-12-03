@@ -1,5 +1,7 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
 
+use core::prelude;
+
 use super::{frame_alloc, FrameTracker};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
@@ -218,6 +220,99 @@ impl MemorySet {
     pub fn translate(&self, vpn: VirtPageNum) -> Option<PageTableEntry> {
         self.page_table.translate(vpn)
     }
+    
+    pub fn mmap_check_port_start(&self,_start: usize, _len: usize, _port: usize)->bool{
+        if (_port&!0x7) != 0 || (_port&0x7==0){
+            return false;
+        }
+        if (_start&(4096-1)) != 0{
+            return false;
+        }
+        true
+    }
+
+    pub fn resolve_port(&self,port:usize)->MapPermission{
+        match port {
+            1=>MapPermission::R|MapPermission::U,
+            2=>MapPermission::W|MapPermission::U,
+            3=>MapPermission::W|MapPermission::R|MapPermission::U,
+            4=>MapPermission::X|MapPermission::U,
+            5=>MapPermission::X|MapPermission::R|MapPermission::U,
+            6=>MapPermission::W|MapPermission::X|MapPermission::U,
+            7=>MapPermission::W|MapPermission::R|MapPermission::X|MapPermission::U,
+            _=>MapPermission { bits: 0 },
+        }
+    }
+
+    pub fn is_mapped_before(&self,start_va:VirtAddr,end_va:VirtAddr)->bool{
+        let start_vpn: VirtPageNum = start_va.floor();
+        let end_vpn: VirtPageNum = end_va.ceil();
+        let vRange=VPNRange::new(start_vpn, end_vpn);
+        for vpn in vRange{
+            for mem_area in self.areas.iter(){
+                if mem_area.data_frames.contains_key(&vpn){
+                    //println!("{:?} is mapped before",vpn);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn mmap(&mut self,_start: usize, _len: usize, _port: usize)->isize{//这里相当于直接插入了一个新的逻辑段
+        match self.mmap_check_port_start(_start,_len,_port) {
+            true=>{
+                let permission=self.resolve_port(_port);
+                let start_va=VirtAddr(_start);
+                let end_va=VirtAddr(_start+_len);
+                if self.is_mapped_before(start_va,end_va){
+                    return -1;
+                }
+                //println!("map {:?} to {:?}",start_va,end_va);
+                self.insert_framed_area(start_va, end_va, permission);
+                // self.push(
+                //     MapArea::new(
+                //         _start.into(),
+                //         (_start+_len).into(),
+                //         MapType::Framed,
+                //         permission,
+                //     ),
+                //     None,
+                // );
+                //println!("perm is {:?}",permission);
+                //println!("end map {:?} to {:?}",start_va,end_va);
+                0
+            },
+            false=>-1,
+        }
+    }
+
+    pub fn munmap(&mut self,_start: usize, _len: usize) -> isize {
+        let start_va=VirtAddr(_start);
+        let end_va=VirtAddr(_start+_len);
+        //if self.is_all_mapped(start_va, end_va){
+            let start_vpn: VirtPageNum = start_va.floor();
+            let end_vpn: VirtPageNum = end_va.ceil();
+            //println!("unmap {:?} to {:?}",start_va,end_va);
+            let vRange=VPNRange::new(start_vpn, end_vpn);
+            let mut flag:bool=false;
+            for vpn in vRange{
+                for area in self.areas.iter_mut(){
+                    if area.data_frames.contains_key(&vpn){
+                        area.unmap_one(&mut self.page_table, vpn);
+                        flag=true;
+                        break;
+                    }
+                }
+                if flag==false{
+                    return -1;
+                }
+                flag=false;
+            }
+            return 0;
+        //}
+    }
+
 }
 
 /// map area structure, controls a contiguous piece of virtual memory
@@ -256,6 +351,7 @@ impl MapArea {
             MapType::Framed => {
                 let frame = frame_alloc().unwrap();//这里要分配一个物理页帧
                 ppn = frame.ppn;
+                //println!("data frames insert <{:?},{:?}>",vpn,frame);
                 self.data_frames.insert(vpn, frame);
             }
         }
@@ -276,6 +372,7 @@ impl MapArea {
     pub fn map(&mut self, page_table: &mut PageTable) {
         //将当前逻辑段到物理内存的映射从传入的该逻辑段所属的地址空间的多级页表中加入或删除
         for vpn in self.vpn_range {
+            //println!("map {:?} to page_table",vpn);
             self.map_one(page_table, vpn);
         }
     }
@@ -350,3 +447,4 @@ pub fn remap_test() {
         .executable());
     info!("remap_test passed!");
 }
+
